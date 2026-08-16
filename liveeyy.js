@@ -1,159 +1,524 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const path = require("path");
-
-const app = express();
-
-const server = http.createServer(app);
-
-const io = new Server(server);
-
-const PORT = process.env.PORT || 3000;
+const socket = io();
 
 
-/* Serve frontend */
+let cameraStream = null;
 
-app.use(express.static(path.join(__dirname, "public")));
+let currentLocation = null;
 
 
-/*
-    Store currently active streams.
+/* =========================================
+   OPEN LIVE PANEL
+========================================= */
 
-    Example:
+async function openLivePanel() {
 
-    {
-        socketId: {
-            title: "...",
-            latitude: 10.52,
-            longitude: 76.21
-        }
+    document
+        .getElementById("overlay")
+        .classList.remove("hidden");
+
+
+    document
+        .getElementById("livePanel")
+        .classList.remove("hidden");
+
+
+    await startCamera();
+
+    getLocation();
+
+}
+
+
+/* =========================================
+   CAMERA
+========================================= */
+
+async function startCamera() {
+
+    try {
+
+        cameraStream =
+            await navigator.mediaDevices
+                .getUserMedia({
+
+                    video: true,
+
+                    audio: true
+
+                });
+
+
+        document
+            .getElementById("cameraPreview")
+            .srcObject = cameraStream;
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert(
+            "Camera permission is required."
+        );
+
     }
-*/
 
-const liveStreams = {};
-
-
-/* User connects */
-
-io.on("connection", (socket) => {
-
-    console.log("User connected:", socket.id);
+}
 
 
-    /*
-        Send currently active streams
-        to the new user.
-    */
+/* =========================================
+   LOCATION
+========================================= */
 
-    socket.emit(
-        "existingStreams",
-        liveStreams
+function getLocation() {
+
+    const text =
+        document.getElementById(
+            "locationText"
+        );
+
+
+    if (!navigator.geolocation) {
+
+        text.innerText =
+            "Location not supported.";
+
+        return;
+
+    }
+
+
+    text.innerText =
+        "Getting location...";
+
+
+    navigator.geolocation.getCurrentPosition(
+
+        position => {
+
+            currentLocation = {
+
+                latitude:
+                    position.coords.latitude,
+
+                longitude:
+                    position.coords.longitude
+
+            };
+
+
+            text.innerText =
+                `Latitude:
+                ${currentLocation.latitude.toFixed(5)}
+
+                Longitude:
+                ${currentLocation.longitude.toFixed(5)}`;
+
+        },
+
+
+        error => {
+
+            text.innerText =
+                "Location permission denied.";
+
+        },
+
+        {
+
+            enableHighAccuracy: true,
+
+            timeout: 10000
+
+        }
+
+    );
+
+}
+
+
+/* =========================================
+   CREATE THUMBNAIL
+========================================= */
+
+function createThumbnail() {
+
+    const video =
+        document.getElementById(
+            "cameraPreview"
+        );
+
+
+    const canvas =
+        document.createElement(
+            "canvas"
+        );
+
+
+    canvas.width = 320;
+
+    canvas.height = 180;
+
+
+    const context =
+        canvas.getContext("2d");
+
+
+    context.drawImage(
+
+        video,
+
+        0,
+
+        0,
+
+        canvas.width,
+
+        canvas.height
+
     );
 
 
-    /*
-        User starts streaming
-    */
+    return canvas.toDataURL(
+        "image/jpeg"
+    );
 
-    socket.on("startLive", (streamData) => {
-
-        liveStreams[socket.id] = {
-
-            id: socket.id,
-
-            title: streamData.title,
-
-            latitude: streamData.latitude,
-
-            longitude: streamData.longitude,
-
-            thumbnail: streamData.thumbnail
-
-        };
+}
 
 
-        /*
-            Tell all other users
-            about the new stream.
-        */
+/* =========================================
+   GO LIVE
+========================================= */
 
-        socket.broadcast.emit(
-            "newStream",
-            liveStreams[socket.id]
+function startLive() {
+
+    if (!cameraStream) {
+
+        alert(
+            "Camera is not available."
         );
 
+        return;
 
-        console.log(
-            "Stream started:",
-            liveStreams[socket.id]
+    }
+
+
+    if (!currentLocation) {
+
+        alert(
+            "Please allow location access."
         );
 
-    });
+        return;
+
+    }
+
+
+    const title =
+        document.getElementById(
+            "streamTitle"
+        ).value.trim();
+
+
+    if (!title) {
+
+        alert(
+            "Enter a stream title."
+        );
+
+        return;
+
+    }
+
+
+    const thumbnail =
+        createThumbnail();
 
 
     /*
-        User stops streaming
+        Send stream information
+        to backend.
     */
 
-    socket.on("stopLive", () => {
+    socket.emit(
 
-        removeStream(socket.id);
+        "startLive",
 
-    });
+        {
 
+            title: title,
 
-    /*
-        User disconnects
-    */
+            latitude:
+                currentLocation.latitude,
 
-    socket.on("disconnect", () => {
+            longitude:
+                currentLocation.longitude,
 
-        removeStream(socket.id);
+            thumbnail: thumbnail
 
-        console.log(
-            "User disconnected:",
-            socket.id
-        );
-
-    });
-
-
-    function removeStream(socketId) {
-
-        if (!liveStreams[socketId]) {
-            return;
         }
 
+    );
 
-        delete liveStreams[socketId];
+
+    closeLivePanel();
 
 
-        io.emit(
-            "streamRemoved",
+    alert(
+        "You are now LIVE!"
+    );
+
+}
+
+
+/* =========================================
+   RECEIVE EXISTING STREAMS
+========================================= */
+
+socket.on(
+
+    "existingStreams",
+
+    streams => {
+
+        Object.values(streams)
+            .forEach(stream => {
+
+                createStreamMarker(
+                    stream
+                );
+
+            });
+
+    }
+
+);
+
+
+/* =========================================
+   RECEIVE NEW STREAM
+========================================= */
+
+socket.on(
+
+    "newStream",
+
+    stream => {
+
+        createStreamMarker(
+            stream
+        );
+
+    }
+
+);
+
+
+/* =========================================
+   CREATE MAP MARKER
+========================================= */
+
+function createStreamMarker(stream) {
+
+    /*
+        This converts latitude/longitude
+        into a visual position for this
+        simple prototype.
+
+        For production, replace this with
+        Leaflet / Google Maps / Mapbox.
+    */
+
+    const x =
+        ((stream.longitude + 180) / 360) * 100;
+
+
+    const y =
+        ((90 - stream.latitude) / 180) * 100;
+
+
+    const marker =
+        document.createElement(
+            "div"
+        );
+
+
+    marker.className =
+        "stream-marker";
+
+
+    marker.style.left =
+        Math.max(
+            5,
+            Math.min(90, x)
+        ) + "%";
+
+
+    marker.style.top =
+        Math.max(
+            10,
+            Math.min(85, y)
+        ) + "%";
+
+
+    marker.style.backgroundImage =
+        `url("${stream.thumbnail}")`;
+
+
+    marker.innerHTML = `
+
+        <div class="live-dot"></div>
+
+        <div class="location-label">
+            📍 LIVE
+        </div>
+
+    `;
+
+
+    marker.onclick = function() {
+
+        openStream(
+            stream
+        );
+
+    };
+
+
+    document
+        .getElementById("map")
+        .appendChild(marker);
+
+}
+
+
+/* =========================================
+   OPEN STREAM
+========================================= */
+
+function openStream(stream) {
+
+    const video =
+        document.getElementById(
+            "remoteVideo"
+        );
+
+
+    /*
+        At this stage this shows the
+        stream thumbnail.
+
+        Real WebRTC video will be attached
+        here in the next version.
+    */
+
+    video.src =
+        stream.thumbnail;
+
+
+    document
+        .getElementById(
+            "videoTitle"
+        )
+        .innerText =
+            stream.title;
+
+
+    document
+        .getElementById(
+            "videoLocation"
+        )
+        .innerText =
+            `📍 ${stream.latitude.toFixed(5)},
+             ${stream.longitude.toFixed(5)}`;
+
+
+    document
+        .getElementById(
+            "videoWindow"
+        )
+        .classList.remove(
+            "hidden"
+        );
+
+}
+
+
+/* =========================================
+   CLOSE VIDEO
+========================================= */
+
+function closeVideo() {
+
+    const video =
+        document.getElementById(
+            "remoteVideo"
+        );
+
+
+    video.pause();
+
+    video.src = "";
+
+
+    document
+        .getElementById(
+            "videoWindow"
+        )
+        .classList.add(
+            "hidden"
+        );
+
+}
+
+
+/* =========================================
+   CLOSE LIVE PANEL
+========================================= */
+
+function closeLivePanel() {
+
+    document
+        .getElementById(
+            "livePanel"
+        )
+        .classList.add(
+            "hidden"
+        );
+
+
+    document
+        .getElementById(
+            "overlay"
+        )
+        .classList.add(
+            "hidden"
+        );
+
+}
+
+
+/* =========================================
+   STREAM REMOVED
+========================================= */
+
+socket.on(
+
+    "streamRemoved",
+
+    socketId => {
+
+        /*
+            In the next version we'll give
+            each marker its socket ID and
+            remove it from the map here.
+        */
+
+        console.log(
+            "Stream ended:",
             socketId
         );
 
     }
 
-});
-
-
-/*
-    Start server
-
-    IMPORTANT:
-    Render requires 0.0.0.0
-*/
-
-server.listen(
-    PORT,
-    "0.0.0.0",
-    () => {
-
-        console.log(
-            `LiveMap running on port ${PORT}`
-        );
-
-    }
 );
