@@ -351,6 +351,10 @@ function startLive() {
         .getElementById("startLiveButton")
         .disabled = true;
 
+    document
+    .getElementById("endLiveButton")
+    .style.display = "block";
+
 
     closeLivePanel();
 
@@ -1189,6 +1193,10 @@ function stopLive() {
 
     button.disabled =
         false;
+
+    document
+    .getElementById("endLiveButton")
+    .style.display = "none";
 
 
     closeVideo();
