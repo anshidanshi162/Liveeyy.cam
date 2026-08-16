@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>LiveMap</title>
+
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
+
+</head>
+
+
+<body>
+
+
+<header>
+
+    <div class="logo">
+        <span>●</span> LiveMap
+    </div>
+
+
+    <button
+        id="startLiveButton"
+        onclick="openLivePanel()"
+    >
+        🔴 Start Live
+    </button>
+
+</header>
+
+
+
+<main id="map">
+
+
+    <!-- Decorative roads -->
+
+    <div class="road road1"></div>
+
+    <div class="road road2"></div>
+
+    <div class="road road3"></div>
+
+
+    <!-- Stream markers will appear here -->
+
+</main>
+
+
+
+<!-- LIVE PANEL -->
+
+<div
+    id="overlay"
+    class="hidden"
+></div>
+
+
+<div
+    id="livePanel"
+    class="panel hidden"
+>
+
+    <h2>🔴 Start Live Stream</h2>
+
+
+    <video
+        id="cameraPreview"
+        autoplay
+        muted
+        playsinline
+    ></video>
+
+
+    <input
+        id="streamTitle"
+        type="text"
+        placeholder="Enter stream title"
+        value="My Live Stream"
+    >
+
+
+    <div class="location">
+
+        📍 <strong>Public Location</strong>
+
+        <p id="locationText">
+            Detecting your location...
+        </p>
+
+    </div>
+
+
+    <div class="buttons">
+
+        <button
+            class="cancel"
+            onclick="closeLivePanel()"
+        >
+            Cancel
+        </button>
+
+
+        <button
+            class="goLive"
+            onclick="startLive()"
+        >
+            🔴 Go Live
+        </button>
+
+    </div>
+
+</div>
+
+
+
+<!-- VIDEO PLAYER -->
+
+<div
+    id="videoWindow"
+    class="video-window hidden"
+>
+
+    <button
+        class="close"
+        onclick="closeVideo()"
+    >
+        ✕
+    </button>
+
+
+    <video
+        id="remoteVideo"
+        autoplay
+        controls
+        playsinline
+    ></video>
+
+
+    <div class="videoInfo">
+
+        <h3 id="videoTitle">
+            Live Stream
+        </h3>
+
+        <p id="videoLocation">
+            📍 Location
+        </p>
+
+    </div>
+
+</div>
+
+
+
+<script src="/socket.io/socket.io.js"></script>
+
+<script src="app.js"></script>
+
+
+</body>
+
+</html>
