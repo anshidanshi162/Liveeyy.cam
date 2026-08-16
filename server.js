@@ -4,7 +4,6 @@ const { Server } = require("socket.io");
 const path = require("path");
 
 const app = express();
-
 const server = http.createServer(app);
 
 const io = new Server(server);
@@ -12,38 +11,37 @@ const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 
 
-/* Serve frontend */
+/*
+|--------------------------------------------------------------------------
+| Serve frontend
+|--------------------------------------------------------------------------
+*/
 
 app.use(express.static(path.join(__dirname, "public")));
 
 
 /*
-    Store currently active streams.
-
-    Example:
-
-    {
-        socketId: {
-            title: "...",
-            latitude: 10.52,
-            longitude: 76.21
-        }
-    }
+|--------------------------------------------------------------------------
+| Active live streams
+|--------------------------------------------------------------------------
 */
 
 const liveStreams = {};
 
 
-/* User connects */
+/*
+|--------------------------------------------------------------------------
+| Socket.IO
+|--------------------------------------------------------------------------
+*/
 
 io.on("connection", (socket) => {
 
-    console.log("User connected:", socket.id);
+    console.log("Connected:", socket.id);
 
 
     /*
-        Send currently active streams
-        to the new user.
+    Send existing streams to newly connected user
     */
 
     socket.emit(
@@ -53,29 +51,37 @@ io.on("connection", (socket) => {
 
 
     /*
-        User starts streaming
+    ----------------------------------------------------------------------
+    START LIVE
+    ----------------------------------------------------------------------
     */
 
-    socket.on("startLive", (streamData) => {
+    socket.on("startLive", (data) => {
 
         liveStreams[socket.id] = {
 
             id: socket.id,
 
-            title: streamData.title,
+            title: data.title,
 
-            latitude: streamData.latitude,
+            latitude: data.latitude,
 
-            longitude: streamData.longitude,
+            longitude: data.longitude,
 
-            thumbnail: streamData.thumbnail
+            thumbnail: data.thumbnail
 
         };
 
 
+        console.log(
+            "LIVE:",
+            socket.id,
+            data.title
+        );
+
+
         /*
-            Tell all other users
-            about the new stream.
+        Tell everyone except streamer
         */
 
         socket.broadcast.emit(
@@ -83,17 +89,13 @@ io.on("connection", (socket) => {
             liveStreams[socket.id]
         );
 
-
-        console.log(
-            "Stream started:",
-            liveStreams[socket.id]
-        );
-
     });
 
 
     /*
-        User stops streaming
+    ----------------------------------------------------------------------
+    STOP LIVE
+    ----------------------------------------------------------------------
     */
 
     socket.on("stopLive", () => {
@@ -104,20 +106,126 @@ io.on("connection", (socket) => {
 
 
     /*
-        User disconnects
+    ----------------------------------------------------------------------
+    WEBRTC OFFER
+    ----------------------------------------------------------------------
+
+    Streamer -> Viewer
+    */
+
+    socket.on(
+        "webrtc-offer",
+        ({ viewerId, offer }) => {
+
+            io.to(viewerId).emit(
+                "webrtc-offer",
+                {
+                    streamerId: socket.id,
+                    offer
+                }
+            );
+
+        }
+    );
+
+
+    /*
+    ----------------------------------------------------------------------
+    WEBRTC ANSWER
+    ----------------------------------------------------------------------
+
+    Viewer -> Streamer
+    */
+
+    socket.on(
+        "webrtc-answer",
+        ({ streamerId, answer }) => {
+
+            io.to(streamerId).emit(
+                "webrtc-answer",
+                {
+                    viewerId: socket.id,
+                    answer
+                }
+            );
+
+        }
+    );
+
+
+    /*
+    ----------------------------------------------------------------------
+    ICE CANDIDATE
+    ----------------------------------------------------------------------
+
+    Send ICE candidate to the other peer.
+    */
+
+    socket.on(
+        "ice-candidate",
+        ({ targetId, candidate }) => {
+
+            io.to(targetId).emit(
+                "ice-candidate",
+                {
+                    senderId: socket.id,
+                    candidate
+                }
+            );
+
+        }
+    );
+
+
+    /*
+    ----------------------------------------------------------------------
+    VIEWER REQUESTS STREAM
+    ----------------------------------------------------------------------
+    */
+
+    socket.on(
+        "watchStream",
+        ({ streamerId }) => {
+
+            /*
+            Tell streamer that a new viewer
+            wants to watch.
+            */
+
+            io.to(streamerId).emit(
+                "viewerJoined",
+                {
+                    viewerId: socket.id
+                }
+            );
+
+        }
+    );
+
+
+    /*
+    ----------------------------------------------------------------------
+    DISCONNECT
+    ----------------------------------------------------------------------
     */
 
     socket.on("disconnect", () => {
 
-        removeStream(socket.id);
-
         console.log(
-            "User disconnected:",
+            "Disconnected:",
             socket.id
         );
 
+        removeStream(socket.id);
+
     });
 
+
+    /*
+    ----------------------------------------------------------------------
+    REMOVE STREAM
+    ----------------------------------------------------------------------
+    */
 
     function removeStream(socketId) {
 
@@ -134,16 +242,21 @@ io.on("connection", (socket) => {
             socketId
         );
 
+
+        console.log(
+            "Stream ended:",
+            socketId
+        );
+
     }
 
 });
 
 
 /*
-    Start server
-
-    IMPORTANT:
-    Render requires 0.0.0.0
+|--------------------------------------------------------------------------
+| Start server
+|--------------------------------------------------------------------------
 */
 
 server.listen(
