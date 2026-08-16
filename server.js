@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 3000;
 
 /*
 |--------------------------------------------------------------------------
-| Serve frontend
+| FRONTEND
 |--------------------------------------------------------------------------
 */
 
@@ -22,7 +22,7 @@ app.use(express.static(path.join(__dirname, "public")));
 
 /*
 |--------------------------------------------------------------------------
-| Active live streams
+| LIVE STREAMS
 |--------------------------------------------------------------------------
 */
 
@@ -31,17 +31,18 @@ const liveStreams = {};
 
 /*
 |--------------------------------------------------------------------------
-| Socket.IO
+| SOCKET.IO
 |--------------------------------------------------------------------------
 */
 
 io.on("connection", (socket) => {
 
-    console.log("Connected:", socket.id);
+    console.log("CONNECTED:", socket.id);
 
 
     /*
-    Send existing streams to newly connected user
+    Send all currently live streams
+    to the new user.
     */
 
     socket.emit(
@@ -51,9 +52,9 @@ io.on("connection", (socket) => {
 
 
     /*
-    ----------------------------------------------------------------------
-    START LIVE
-    ----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
+    | START LIVE
+    |--------------------------------------------------------------------------
     */
 
     socket.on("startLive", (data) => {
@@ -74,14 +75,15 @@ io.on("connection", (socket) => {
 
 
         console.log(
-            "LIVE:",
+            "START LIVE:",
             socket.id,
             data.title
         );
 
 
         /*
-        Tell everyone except streamer
+        Send new stream to everybody
+        except streamer.
         */
 
         socket.broadcast.emit(
@@ -93,103 +95,26 @@ io.on("connection", (socket) => {
 
 
     /*
-    ----------------------------------------------------------------------
-    STOP LIVE
-    ----------------------------------------------------------------------
-    */
-
-    socket.on("stopLive", () => {
-
-        removeStream(socket.id);
-
-    });
-
-
-    /*
-    ----------------------------------------------------------------------
-    WEBRTC OFFER
-    ----------------------------------------------------------------------
-
-    Streamer -> Viewer
-    */
-
-    socket.on(
-        "webrtc-offer",
-        ({ viewerId, offer }) => {
-
-            io.to(viewerId).emit(
-                "webrtc-offer",
-                {
-                    streamerId: socket.id,
-                    offer
-                }
-            );
-
-        }
-    );
-
-
-    /*
-    ----------------------------------------------------------------------
-    WEBRTC ANSWER
-    ----------------------------------------------------------------------
-
-    Viewer -> Streamer
-    */
-
-    socket.on(
-        "webrtc-answer",
-        ({ streamerId, answer }) => {
-
-            io.to(streamerId).emit(
-                "webrtc-answer",
-                {
-                    viewerId: socket.id,
-                    answer
-                }
-            );
-
-        }
-    );
-
-
-    /*
-    ----------------------------------------------------------------------
-    ICE CANDIDATE
-    ----------------------------------------------------------------------
-
-    Send ICE candidate to the other peer.
-    */
-
-    socket.on(
-        "ice-candidate",
-        ({ targetId, candidate }) => {
-
-            io.to(targetId).emit(
-                "ice-candidate",
-                {
-                    senderId: socket.id,
-                    candidate
-                }
-            );
-
-        }
-    );
-
-
-    /*
-    ----------------------------------------------------------------------
-    VIEWER REQUESTS STREAM
-    ----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
+    | VIEWER WANTS TO WATCH
+    |--------------------------------------------------------------------------
     */
 
     socket.on(
         "watchStream",
         ({ streamerId }) => {
 
+            console.log(
+                "VIEWER",
+                socket.id,
+                "wants to watch",
+                streamerId
+            );
+
+
             /*
-            Tell streamer that a new viewer
-            wants to watch.
+            Tell the streamer that
+            a viewer has joined.
             */
 
             io.to(streamerId).emit(
@@ -204,17 +129,94 @@ io.on("connection", (socket) => {
 
 
     /*
-    ----------------------------------------------------------------------
-    DISCONNECT
-    ----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
+    | WEBRTC OFFER
+    |--------------------------------------------------------------------------
     */
 
-    socket.on("disconnect", () => {
+    socket.on(
+        "webrtc-offer",
+        ({ viewerId, offer }) => {
 
-        console.log(
-            "Disconnected:",
-            socket.id
-        );
+            console.log(
+                "OFFER:",
+                socket.id,
+                "->",
+                viewerId
+            );
+
+
+            io.to(viewerId).emit(
+                "webrtc-offer",
+                {
+                    streamerId: socket.id,
+                    offer: offer
+                }
+            );
+
+        }
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | WEBRTC ANSWER
+    |--------------------------------------------------------------------------
+    */
+
+    socket.on(
+        "webrtc-answer",
+        ({ streamerId, answer }) => {
+
+            console.log(
+                "ANSWER:",
+                socket.id,
+                "->",
+                streamerId
+            );
+
+
+            io.to(streamerId).emit(
+                "webrtc-answer",
+                {
+                    viewerId: socket.id,
+                    answer: answer
+                }
+            );
+
+        }
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | ICE CANDIDATE
+    |--------------------------------------------------------------------------
+    */
+
+    socket.on(
+        "ice-candidate",
+        ({ targetId, candidate }) => {
+
+            io.to(targetId).emit(
+                "ice-candidate",
+                {
+                    senderId: socket.id,
+                    candidate: candidate
+                }
+            );
+
+        }
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | STOP LIVE
+    |--------------------------------------------------------------------------
+    */
+
+    socket.on("stopLive", () => {
 
         removeStream(socket.id);
 
@@ -222,20 +224,46 @@ io.on("connection", (socket) => {
 
 
     /*
-    ----------------------------------------------------------------------
-    REMOVE STREAM
-    ----------------------------------------------------------------------
+    |--------------------------------------------------------------------------
+    | DISCONNECT
+    |--------------------------------------------------------------------------
+    */
+
+    socket.on("disconnect", () => {
+
+        console.log(
+            "DISCONNECTED:",
+            socket.id
+        );
+
+
+        removeStream(socket.id);
+
+    });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | REMOVE STREAM
+    |--------------------------------------------------------------------------
     */
 
     function removeStream(socketId) {
 
         if (!liveStreams[socketId]) {
+
             return;
+
         }
 
 
         delete liveStreams[socketId];
 
+
+        /*
+        Tell all connected users
+        that this stream ended.
+        */
 
         io.emit(
             "streamRemoved",
@@ -244,7 +272,7 @@ io.on("connection", (socket) => {
 
 
         console.log(
-            "Stream ended:",
+            "STREAM REMOVED:",
             socketId
         );
 
@@ -255,7 +283,7 @@ io.on("connection", (socket) => {
 
 /*
 |--------------------------------------------------------------------------
-| Start server
+| START SERVER
 |--------------------------------------------------------------------------
 */
 
