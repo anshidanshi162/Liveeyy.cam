@@ -1,14 +1,66 @@
 const socket = io();
 
 
+/*
+|--------------------------------------------------------------------------
+| Global variables
+|--------------------------------------------------------------------------
+*/
+
 let cameraStream = null;
 
 let currentLocation = null;
 
+let isLive = false;
 
-/* =========================================
-   OPEN LIVE PANEL
-========================================= */
+
+/*
+|--------------------------------------------------------------------------
+| WebRTC
+|--------------------------------------------------------------------------
+*/
+
+/*
+STUN helps discover the public network address.
+
+IMPORTANT:
+For production, add a TURN server as well.
+*/
+
+const rtcConfiguration = {
+
+    iceServers: [
+
+        {
+            urls: "stun:stun.l.google.com:19302"
+        }
+
+    ]
+
+};
+
+
+/*
+Streamer:
+viewerId -> RTCPeerConnection
+*/
+
+const streamerPeers = {};
+
+
+/*
+Viewer:
+streamerId -> RTCPeerConnection
+*/
+
+const viewerPeers = {};
+
+
+/*
+|--------------------------------------------------------------------------
+| OPEN LIVE PANEL
+|--------------------------------------------------------------------------
+*/
 
 async function openLivePanel() {
 
@@ -29,9 +81,11 @@ async function openLivePanel() {
 }
 
 
-/* =========================================
-   CAMERA
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| CAMERA
+|--------------------------------------------------------------------------
+*/
 
 async function startCamera() {
 
@@ -41,7 +95,17 @@ async function startCamera() {
             await navigator.mediaDevices
                 .getUserMedia({
 
-                    video: true,
+                    video: {
+
+                        width: {
+                            ideal: 1280
+                        },
+
+                        height: {
+                            ideal: 720
+                        }
+
+                    },
 
                     audio: true
 
@@ -58,7 +122,7 @@ async function startCamera() {
         console.error(error);
 
         alert(
-            "Camera permission is required."
+            "Camera and microphone permission is required."
         );
 
     }
@@ -66,9 +130,11 @@ async function startCamera() {
 }
 
 
-/* =========================================
-   LOCATION
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| LOCATION
+|--------------------------------------------------------------------------
+*/
 
 function getLocation() {
 
@@ -81,7 +147,7 @@ function getLocation() {
     if (!navigator.geolocation) {
 
         text.innerText =
-            "Location not supported.";
+            "Location is not supported.";
 
         return;
 
@@ -89,7 +155,7 @@ function getLocation() {
 
 
     text.innerText =
-        "Getting location...";
+        "Getting your location...";
 
 
     navigator.geolocation.getCurrentPosition(
@@ -116,8 +182,9 @@ function getLocation() {
 
         },
 
-
         error => {
+
+            console.error(error);
 
             text.innerText =
                 "Location permission denied.";
@@ -128,7 +195,9 @@ function getLocation() {
 
             enableHighAccuracy: true,
 
-            timeout: 10000
+            timeout: 10000,
+
+            maximumAge: 0
 
         }
 
@@ -137,9 +206,11 @@ function getLocation() {
 }
 
 
-/* =========================================
-   CREATE THUMBNAIL
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| CREATE THUMBNAIL
+|--------------------------------------------------------------------------
+*/
 
 function createThumbnail() {
 
@@ -180,15 +251,18 @@ function createThumbnail() {
 
 
     return canvas.toDataURL(
-        "image/jpeg"
+        "image/jpeg",
+        0.7
     );
 
 }
 
 
-/* =========================================
-   GO LIVE
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| START LIVE
+|--------------------------------------------------------------------------
+*/
 
 function startLive() {
 
@@ -215,15 +289,16 @@ function startLive() {
 
 
     const title =
-        document.getElementById(
-            "streamTitle"
-        ).value.trim();
+        document
+            .getElementById("streamTitle")
+            .value
+            .trim();
 
 
     if (!title) {
 
         alert(
-            "Enter a stream title."
+            "Please enter a stream title."
         );
 
         return;
@@ -235,9 +310,11 @@ function startLive() {
         createThumbnail();
 
 
+    isLive = true;
+
+
     /*
-        Send stream information
-        to backend.
+    Tell server that this user is live.
     */
 
     socket.emit(
@@ -246,7 +323,7 @@ function startLive() {
 
         {
 
-            title: title,
+            title,
 
             latitude:
                 currentLocation.latitude,
@@ -254,26 +331,94 @@ function startLive() {
             longitude:
                 currentLocation.longitude,
 
-            thumbnail: thumbnail
+            thumbnail
 
         }
 
     );
 
 
+    /*
+    Change interface.
+    */
+
+    document
+        .getElementById("startLiveButton")
+        .innerText = "🔴 LIVE";
+
+
+    document
+        .getElementById("startLiveButton")
+        .disabled = true;
+
+
     closeLivePanel();
 
 
-    alert(
-        "You are now LIVE!"
-    );
+    /*
+    Show own live stream.
+    */
+
+    openOwnLiveVideo();
 
 }
 
 
-/* =========================================
-   RECEIVE EXISTING STREAMS
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| OPEN OWN LIVE VIDEO
+|--------------------------------------------------------------------------
+*/
+
+function openOwnLiveVideo() {
+
+    const video =
+        document.getElementById(
+            "remoteVideo"
+        );
+
+
+    video.srcObject =
+        cameraStream;
+
+
+    video.muted = true;
+
+    video.controls = true;
+
+
+    document
+        .getElementById(
+            "videoTitle"
+        )
+        .innerText =
+            "🔴 You are LIVE";
+
+
+    document
+        .getElementById(
+            "videoLocation"
+        )
+        .innerText =
+            "📍 Your public location";
+
+
+    document
+        .getElementById(
+            "videoWindow"
+        )
+        .classList.remove(
+            "hidden"
+        );
+
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| RECEIVE EXISTING STREAMS
+|--------------------------------------------------------------------------
+*/
 
 socket.on(
 
@@ -295,9 +440,11 @@ socket.on(
 );
 
 
-/* =========================================
-   RECEIVE NEW STREAM
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| NEW STREAM
+|--------------------------------------------------------------------------
+*/
 
 socket.on(
 
@@ -314,27 +461,27 @@ socket.on(
 );
 
 
-/* =========================================
-   CREATE MAP MARKER
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| CREATE STREAM MARKER
+|--------------------------------------------------------------------------
+*/
 
 function createStreamMarker(stream) {
 
     /*
-        This converts latitude/longitude
-        into a visual position for this
-        simple prototype.
-
-        For production, replace this with
-        Leaflet / Google Maps / Mapbox.
+    Don't show duplicate markers.
     */
 
-    const x =
-        ((stream.longitude + 180) / 360) * 100;
+    if (
+        document.querySelector(
+            `[data-stream-id="${stream.id}"]`
+        )
+    ) {
 
+        return;
 
-    const y =
-        ((90 - stream.latitude) / 180) * 100;
+    }
 
 
     const marker =
@@ -345,6 +492,26 @@ function createStreamMarker(stream) {
 
     marker.className =
         "stream-marker";
+
+
+    marker.dataset.streamId =
+        stream.id;
+
+
+    /*
+    Simple latitude/longitude
+    visualization.
+
+    For a real map we will replace
+    this with Leaflet.
+    */
+
+    const x =
+        ((stream.longitude + 180) / 360) * 100;
+
+
+    const y =
+        ((90 - stream.latitude) / 180) * 100;
 
 
     marker.style.left =
@@ -370,7 +537,7 @@ function createStreamMarker(stream) {
         <div class="live-dot"></div>
 
         <div class="location-label">
-            📍 LIVE
+            🔴 LIVE
         </div>
 
     `;
@@ -378,9 +545,7 @@ function createStreamMarker(stream) {
 
     marker.onclick = function() {
 
-        openStream(
-            stream
-        );
+        watchStream(stream);
 
     };
 
@@ -392,36 +557,71 @@ function createStreamMarker(stream) {
 }
 
 
-/* =========================================
-   OPEN STREAM
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| WATCH STREAM
+|--------------------------------------------------------------------------
+*/
 
-function openStream(stream) {
+function watchStream(stream) {
 
-    const video =
-        document.getElementById(
-            "remoteVideo"
-        );
+    /*
+    Tell streamer:
+    "I want to watch."
+    */
+
+    socket.emit(
+
+        "watchStream",
+
+        {
+
+            streamerId:
+                stream.id
+
+        }
+
+    );
 
 
     /*
-        At this stage this shows the
-        stream thumbnail.
+    Prepare viewer peer connection.
 
-        Real WebRTC video will be attached
-        here in the next version.
+    The actual offer will arrive
+    from streamer.
     */
 
-    video.src =
-        stream.thumbnail;
+    openVideoWindow(
 
+        stream.title,
+
+        stream.latitude,
+
+        stream.longitude
+
+    );
+
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| OPEN VIDEO WINDOW
+|--------------------------------------------------------------------------
+*/
+
+function openVideoWindow(
+    title,
+    latitude,
+    longitude
+) {
 
     document
         .getElementById(
             "videoTitle"
         )
         .innerText =
-            stream.title;
+            title;
 
 
     document
@@ -429,8 +629,8 @@ function openStream(stream) {
             "videoLocation"
         )
         .innerText =
-            `📍 ${stream.latitude.toFixed(5)},
-             ${stream.longitude.toFixed(5)}`;
+            `📍 ${latitude.toFixed(5)},
+             ${longitude.toFixed(5)}`;
 
 
     document
@@ -444,9 +644,428 @@ function openStream(stream) {
 }
 
 
-/* =========================================
-   CLOSE VIDEO
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| STREAMER RECEIVES NEW VIEWER
+|--------------------------------------------------------------------------
+*/
+
+socket.on(
+
+    "viewerJoined",
+
+    async ({ viewerId }) => {
+
+        if (!cameraStream) {
+
+            return;
+
+        }
+
+
+        console.log(
+            "New viewer:",
+            viewerId
+        );
+
+
+        /*
+        Create a peer connection
+        specifically for this viewer.
+        */
+
+        const peer =
+            new RTCPeerConnection(
+                rtcConfiguration
+            );
+
+
+        streamerPeers[viewerId] =
+            peer;
+
+
+        /*
+        Add camera + microphone.
+        */
+
+        cameraStream
+            .getTracks()
+            .forEach(track => {
+
+                peer.addTrack(
+                    track,
+                    cameraStream
+                );
+
+            });
+
+
+        /*
+        Send ICE candidates.
+        */
+
+        peer.onicecandidate =
+            event => {
+
+                if (!event.candidate) {
+
+                    return;
+
+                }
+
+
+                socket.emit(
+
+                    "ice-candidate",
+
+                    {
+
+                        targetId:
+                            viewerId,
+
+                        candidate:
+                            event.candidate
+
+                    }
+
+                );
+
+            };
+
+
+        /*
+        Create WebRTC offer.
+        */
+
+        const offer =
+            await peer.createOffer();
+
+
+        await peer.setLocalDescription(
+            offer
+        );
+
+
+        /*
+        Send offer to viewer.
+        */
+
+        socket.emit(
+
+            "webrtc-offer",
+
+            {
+
+                viewerId,
+
+                offer
+
+            }
+
+        );
+
+    }
+
+);
+
+
+/*
+|--------------------------------------------------------------------------
+| VIEWER RECEIVES OFFER
+|--------------------------------------------------------------------------
+*/
+
+socket.on(
+
+    "webrtc-offer",
+
+    async ({
+        streamerId,
+        offer
+    }) => {
+
+        console.log(
+            "Received offer from:",
+            streamerId
+        );
+
+
+        const peer =
+            new RTCPeerConnection(
+                rtcConfiguration
+            );
+
+
+        viewerPeers[streamerId] =
+            peer;
+
+
+        /*
+        When remote video arrives.
+        */
+
+        peer.ontrack =
+            event => {
+
+                const video =
+                    document.getElementById(
+                        "remoteVideo"
+                    );
+
+
+                if (
+                    video.srcObject !==
+                    event.streams[0]
+                ) {
+
+                    video.srcObject =
+                        event.streams[0];
+
+                    video.muted = false;
+
+                    video.play()
+                        .catch(
+                            () => {}
+                        );
+
+                }
+
+            };
+
+
+        /*
+        Send ICE candidates
+        back to streamer.
+        */
+
+        peer.onicecandidate =
+            event => {
+
+                if (!event.candidate) {
+
+                    return;
+
+                }
+
+
+                socket.emit(
+
+                    "ice-candidate",
+
+                    {
+
+                        targetId:
+                            streamerId,
+
+                        candidate:
+                            event.candidate
+
+                    }
+
+                );
+
+            };
+
+
+        /*
+        Receive streamer offer.
+        */
+
+        await peer.setRemoteDescription(
+            new RTCSessionDescription(
+                offer
+            )
+        );
+
+
+        /*
+        Create answer.
+        */
+
+        const answer =
+            await peer.createAnswer();
+
+
+        await peer.setLocalDescription(
+            answer
+        );
+
+
+        /*
+        Send answer to streamer.
+        */
+
+        socket.emit(
+
+            "webrtc-answer",
+
+            {
+
+                streamerId,
+
+                answer
+
+            }
+
+        );
+
+    }
+
+);
+
+
+/*
+|--------------------------------------------------------------------------
+| STREAMER RECEIVES ANSWER
+|--------------------------------------------------------------------------
+*/
+
+socket.on(
+
+    "webrtc-answer",
+
+    async ({
+        viewerId,
+        answer
+    }) => {
+
+        const peer =
+            streamerPeers[viewerId];
+
+
+        if (!peer) {
+
+            return;
+
+        }
+
+
+        await peer.setRemoteDescription(
+
+            new RTCSessionDescription(
+                answer
+            )
+
+        );
+
+    }
+
+);
+
+
+/*
+|--------------------------------------------------------------------------
+| ICE CANDIDATES
+|--------------------------------------------------------------------------
+*/
+
+socket.on(
+
+    "ice-candidate",
+
+    async ({
+        senderId,
+        candidate
+    }) => {
+
+        try {
+
+            let peer =
+                streamerPeers[senderId];
+
+
+            if (!peer) {
+
+                peer =
+                    viewerPeers[senderId];
+
+            }
+
+
+            if (
+                peer &&
+                candidate
+            ) {
+
+                await peer.addIceCandidate(
+
+                    new RTCIceCandidate(
+                        candidate
+                    )
+
+                );
+
+            }
+
+        } catch (error) {
+
+            console.error(
+                "ICE error:",
+                error
+            );
+
+        }
+
+    }
+
+);
+
+
+/*
+|--------------------------------------------------------------------------
+| STREAM REMOVED
+|--------------------------------------------------------------------------
+*/
+
+socket.on(
+
+    "streamRemoved",
+
+    socketId => {
+
+        const marker =
+            document.querySelector(
+
+                `[data-stream-id="${socketId}"]`
+
+            );
+
+
+        if (marker) {
+
+            marker.remove();
+
+        }
+
+
+        /*
+        Close viewer connection.
+        */
+
+        if (
+            viewerPeers[socketId]
+        ) {
+
+            viewerPeers[socketId]
+                .close();
+
+
+            delete viewerPeers[
+                socketId
+            ];
+
+        }
+
+    }
+
+);
+
+
+/*
+|--------------------------------------------------------------------------
+| CLOSE VIDEO
+|--------------------------------------------------------------------------
+*/
 
 function closeVideo() {
 
@@ -456,9 +1075,22 @@ function closeVideo() {
         );
 
 
-    video.pause();
+    /*
+    Don't stop our own camera
+    just because the player closed.
+    */
 
-    video.src = "";
+    if (
+        video.srcObject !==
+        cameraStream
+    ) {
+
+        video.srcObject = null;
+
+    }
+
+
+    video.pause();
 
 
     document
@@ -472,9 +1104,103 @@ function closeVideo() {
 }
 
 
-/* =========================================
-   CLOSE LIVE PANEL
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| END LIVE
+|--------------------------------------------------------------------------
+*/
+
+function stopLive() {
+
+    if (!isLive) {
+
+        return;
+
+    }
+
+
+    isLive = false;
+
+
+    /*
+    Tell server.
+    */
+
+    socket.emit(
+        "stopLive"
+    );
+
+
+    /*
+    Close all viewer connections.
+    */
+
+    Object.values(
+        streamerPeers
+    )
+    .forEach(peer => {
+
+        peer.close();
+
+    });
+
+
+    for (
+        const id in streamerPeers
+    ) {
+
+        delete streamerPeers[id];
+
+    }
+
+
+    /*
+    Stop camera and microphone.
+    */
+
+    if (cameraStream) {
+
+        cameraStream
+            .getTracks()
+            .forEach(track => {
+
+                track.stop();
+
+            });
+
+        cameraStream = null;
+
+    }
+
+
+    /*
+    Reset button.
+    */
+
+    const button =
+        document.getElementById(
+            "startLiveButton"
+        );
+
+
+    button.innerText =
+        "🔴 Start Live";
+
+
+    button.disabled =
+        false;
+
+
+    closeVideo();
+
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| CLOSE LIVE PANEL
+|--------------------------------------------------------------------------
+*/
 
 function closeLivePanel() {
 
@@ -496,29 +1222,3 @@ function closeLivePanel() {
         );
 
 }
-
-
-/* =========================================
-   STREAM REMOVED
-========================================= */
-
-socket.on(
-
-    "streamRemoved",
-
-    socketId => {
-
-        /*
-            In the next version we'll give
-            each marker its socket ID and
-            remove it from the map here.
-        */
-
-        console.log(
-            "Stream ended:",
-            socketId
-        );
-
-    }
-
-);
