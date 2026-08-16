@@ -1,7 +1,7 @@
 {
   "name": "livemap",
   "version": "1.0.0",
-  "description": "Location based live streaming website",
+  "description": "Location based WebRTC live streaming website",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
